@@ -1,0 +1,9 @@
+LAMMPS (8 Apr 2021)
+# Diffusion - Migration - Potential - Nucleation - Reaction Modeling
+# Cycling
+# nucleation equation implementation with nucleation rate
+# 6/8/23
+# Madison Morey
+
+log 		${dname}/log.lammps
+log 		/projectnb/ryanlab/mmorey/LAMMPS_NUCLEATION/results/wettingangle_180_19Apr24_6735993/log.lammps

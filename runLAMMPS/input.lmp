@@ -1,0 +1,112 @@
+# Diffusion - Migration - Potential - Nucleation - Reaction Modeling
+# Cycling
+# nucleation equation implementation with nucleation rate 
+# 6/8/23
+# Madison Morey
+
+log 		${dname}/log.lammps
+dimension       2
+units		micro
+atom_style	meso/new
+boundary        f f p 
+
+# Adding particle properties - anion concentration, change in anion concentration, cation concentration, change in cation concentration, anion mobility, cation mobility,anion diffusion coefficient, cation diffusion coefficient, reaction rate coefficient for cations at anode, surface energy for cations at anode, mass of metal, change in mass of metal, local potential, next local potential, next local potential, x-normal component, next x-normal component, y-normal component, next y-normal component, z-normal component, next z-normal component
+
+fix             prop all property/atom d_cA d_dcA d_cC d_dcC d_muA d_muC d_DA d_DC d_RC d_surf_energy d_rR d_drR d_nN d_dnN d_mM d_dmM d_local_pot d_nx d_ny d_nz ghost yes
+
+# Particle property values
+include		vars.lmp
+
+# Domain creation and particle spacing
+lattice	        sq ${dx} origin 0.5 0.5 0	
+region		box block 0 ${L_x} 0 ${L_y} 0 ${dx} units box
+create_box	3 box
+create_atoms	1 box
+
+# Create regions
+region        rliquid    block EDGE EDGE ${anode_end} ${const_conc}  EDGE EDGE units box
+region        rsolid     block EDGE EDGE EDGE ${anode_end}  EDGE EDGE units box
+region        rconstconc block EDGE EDGE ${const_conc} EDGE EDGE EDGE units box
+
+
+# Combine regions into groups
+group         liquid region rliquid
+group         constconc region rconstconc
+group         solid	region rsolid
+
+# Combine regions into groups
+set             group liquid type 1 # liquid is 1
+set             group constconc type 1
+set             group solid type 2
+
+displace_atoms  all random 0.2 0.2 0 798534
+
+# Assign particle property values to regions
+include		particleProp.lmp
+
+# Set the number of cycles
+#variable  	total_half_cycles equal 10
+#variable  	total_cycles equal ${total_half_cycles}/2-2
+
+#print		"**************************** Charge cycle number: 1/${total_half_cycles} *******************"
+
+
+########################################################################
+########################### Set fixes ##################################
+################## Constant across all runs ############################
+########################################################################
+
+# Calculate normals at interface
+fix             norm_calc       all sph/surfacenormal ${d}
+
+# Constant concentration fixes for boundary
+fix             constant_concentration_cA constconc sph/constant/cA ${sph_const_cA}
+fix             constant_concentration_cC constconc sph/constant/cC ${sph_const_cC}
+
+# Calculate the local potential
+fix             pot_calc0        all sph/electropotential ${h} ${sph_conc_to_charge} ${sph_applied_pot_ch} 0.0 ${L_y}
+
+# Sum the changes and precipitate/dissolve solids
+fix		sum_changes_fix all sph/concentration/mass/radius
+fix		precip_diss_fix all sph/precipitation/dissolution/liquidRC ${sph_mass_thres} ${sph_cCeq_ch} ${sph_cAeq_ch}
+
+########################################################################
+####################### Set pair style #################################
+############## Pair style changes for cycling ##########################
+########################################################################
+
+# Initial pair style
+# Allows different reaction rates to be set for different groups
+
+pair_style      sph/twospecies/isodiffusion/migration/csr/bv/nucleation
+pair_coeff      * * ${h} ${d} ${sph_applied_pot_ch} ${sph_cC_init} ${sph_cA_init} ${sph_mass_thres} ${sph_N} ${sph_theta}
+
+
+# For LAMMPS neighbor lists
+neighbor        ${h} bin
+
+# Dump fix 
+dump            dump_fix0 all custom ${nfreq_init} ${dname}/dump.*.dat id type x y d_cA d_dcA d_cC d_dcC d_mM d_dmM d_surf_energy d_nN d_dnN d_local_pot
+
+timestep        ${dt_init}
+
+# Print to screen 
+variable           time equal step*dt
+thermo_style       custom step v_time
+thermo             ${nfreq_init}
+
+run             ${nrun_init}
+
+# ####################################################################################
+# ################################ Loop for running cycles ###########################
+# ####################################################################################
+
+# # a: the variable to be incremented, loop: the variable where the loop will return to
+# # : the number of times a will be incrememted before the loop exits
+# # Further clarification in docs (lammps.sandia.gov/doc/jump.html)
+
+# variable      a loop ${total_cycles}
+# label       loop
+# variable      half_cycle_number equal ${a}*2
+# print  "**************************** Discharge cycle number: ${half_cycle_number}/${total_half_cycles} *******************"
+
